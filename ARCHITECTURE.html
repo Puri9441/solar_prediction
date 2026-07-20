@@ -1,0 +1,316 @@
+<p><strong>Solar Energy Prediction — Architecture Design</strong></p>
+<h2 id="overview">Overview</h2>
+<p>
+  This document describes the architecture of the Solar Energy Prediction
+  project (training, validation, serving, ClearML integration, and
+  orchestration). It covers components, data flow, deployment model, failure
+  modes, scaling and security considerations.
+</p>
+<h2 id="components">Components</h2>
+<ul>
+  <li>
+    Data Layer
+    <ul>
+      <li>
+        <code>data/train.csv</code>: CSV dataset with feature columns and
+        <code>energy_generated</code> target.
+      </li>
+      <li>
+        <code>data/data_registry.py</code>: optional dataset lineage/hashing
+        helper.
+      </li>
+    </ul>
+  </li>
+  <li>
+    Compute / Pipeline
+    <ul>
+      <li>
+        <code>src/train.py</code>: training pipeline that builds a sklearn
+        <code>Pipeline</code> (StandardScaler + RandomForestRegressor), saves
+        artifacts to <code>./artifacts</code>, uploads artifacts and metrics to
+        ClearML, and writes <code>_SUCCESS</code> sentinel.
+      </li>
+      <li>
+        <code>src/validation.py</code>: loads the saved model and performs a
+        smoke-test inference to validate artifact integrity.
+      </li>
+      <li>
+        <code>src/sweep.py</code>: (optional) hyperparameter sweep launcher.
+      </li>
+    </ul>
+  </li>
+  <li>
+    Serving
+    <ul>
+      <li>
+        <code>src/serve.py</code>: Flask app that loads the model from
+        <code>./artifacts</code> and exposes <code>GET /</code>,
+        <code>GET /health</code>, and <code>POST /predict</code> endpoints. It
+        reads <code>feature_names_in_</code> from the pipeline (when available)
+        to ensure correct input ordering.
+      </li>
+    </ul>
+  </li>
+  <li>
+    Orchestration
+    <ul>
+      <li>
+        <code>docker-compose.yml</code>: defines services
+        <code>training-agent</code>, <code>validation-agent</code>, and
+        <code>serve</code>.
+      </li>
+      <li>
+        <code>training-agent</code> runs <code>src/train.py</code> and writes
+        artifacts into the shared volume <code>./artifacts</code>.
+      </li>
+      <li>
+        <code>validation-agent</code> waits for
+        <code>./artifacts/_SUCCESS</code> before running model validation.
+      </li>
+      <li>
+        <code>serve</code> mounts <code>./artifacts</code> and serves the
+        trained model.
+      </li>
+    </ul>
+  </li>
+  <li>
+    Observability &amp; Tracking
+    <ul>
+      <li>
+        ClearML: <code>src/train.py</code> initializes a ClearML
+        <code>Task</code>, reports metrics and uploads artifacts.
+      </li>
+      <li>
+        Local artifacts: stored in <code>./artifacts</code> for debugging and
+        for the <code>serve</code> service to pick up.
+      </li>
+    </ul>
+  </li>
+</ul>
+<h2 id="data-flow">Data Flow</h2>
+<ol type="1">
+  <li>Data owner places <code>train.csv</code> into <code>./data</code>.</li>
+  <li>
+    <code>training-agent</code> reads <code>train.csv</code>, prepares features
+    and target, trains the pipeline, saves
+    <code>solar_energy_model.joblib</code> and <code>metrics.json</code>,
+    uploads artifacts to ClearML, and writes <code>_SUCCESS</code> sentinel.
+  </li>
+  <li>
+    <code>validation-agent</code> (configured to wait on <code>_SUCCESS</code>)
+    runs validation to confirm the model loads and inference works. It writes
+    logs to stdout and optionally reports results.
+  </li>
+  <li>
+    <code>serve</code> (long-running) loads the artifact from
+    <code>./artifacts</code> and responds to prediction requests.
+  </li>
+</ol>
+<h2 id="sequence-diagram-high-level">Sequence Diagram (high-level)</h2>
+<pre class="mermaid"><code>sequenceDiagram
+    participant User
+    participant Compose as Docker-Compose
+    participant Train as training-agent
+    participant Art as Artifacts (host)
+    participant Val as validation-agent
+    participant Serve as serve (Flask)
+    participant Clear as ClearML
+
+    User-&gt;&gt;Compose: docker-compose up --build
+    Compose-&gt;&gt;Train: start
+    Train-&gt;&gt;Art: write solar_energy_model.joblib, metrics.json, _SUCCESS
+    Train-&gt;&gt;Clear: upload metrics &amp; artifacts
+    Compose-&gt;&gt;Val: start (depends_on -&gt; waits for _SUCCESS)
+    Val-&gt;&gt;Art: read model and run smoke test
+    User-&gt;&gt;Serve: GET / (or POST /predict)
+    Serve-&gt;&gt;Art: load model and respond</code></pre>
+<h2 id="deployment-model">Deployment Model</h2>
+<ul>
+  <li>Single-host Docker Compose deployment for development/experiments.</li>
+  <li>
+    Production recommendations:
+    <ul>
+      <li>
+        Use a dedicated storage (S3, NFS) for artifacts and model registry.
+      </li>
+      <li>
+        Replace Flask dev server with a WSGI server (gunicorn) behind a reverse
+        proxy (nginx).
+      </li>
+      <li>
+        Use Kubernetes for scalable orchestration with jobs for training and
+        validation, and a Deployment/Service for serving.
+      </li>
+    </ul>
+  </li>
+</ul>
+<h2 id="volumes-files">Volumes &amp; Files</h2>
+<ul>
+  <li>
+    Host <code>./artifacts</code> is bind-mounted into containers at
+    <code>/app/artifacts</code>.
+  </li>
+  <li>
+    <code>./data</code> is bind-mounted into containers at
+    <code>/app/data</code>.
+  </li>
+</ul>
+<h2 id="scaling-reliability">Scaling &amp; Reliability</h2>
+<ul>
+  <li>
+    Scale Training:
+    <ul>
+      <li>
+        For larger datasets, use distributed training or a bigger instance, and
+        consider using ClearML’s remote execution or cloud agents.
+      </li>
+    </ul>
+  </li>
+  <li>
+    Scale Serving:
+    <ul>
+      <li>Host multiple <code>serve</code> replicas behind a load balancer.</li>
+      <li>
+        Use a model server (TensorFlow Serving, TorchServe, or a custom
+        gunicorn-wsgi-based server).
+      </li>
+    </ul>
+  </li>
+  <li>
+    Reliability:
+    <ul>
+      <li>
+        Use retry/backoff for validation and monitoring for the
+        <code>_SUCCESS</code> sentinel.
+      </li>
+      <li>Add health checks and restart policies for <code>serve</code>.</li>
+    </ul>
+  </li>
+</ul>
+<h2 id="security-considerations">Security Considerations</h2>
+<ul>
+  <li>
+    Do not expose the <code>serve</code> endpoint publicly without
+    authentication.
+  </li>
+  <li>Sanitize inputs and enforce payload size limits.</li>
+  <li>Secure ClearML credentials; use secrets managers for production.</li>
+</ul>
+<h2 id="failure-modes">Failure Modes</h2>
+<ul>
+  <li>Missing <code>_SUCCESS</code> → validation never runs.</li>
+  <li>
+    Model feature mismatch → prediction errors; mitigate by embedding
+    <code>feature_names_in_</code> in the pipeline and validating input schema
+    in <code>serve</code>.
+  </li>
+  <li>
+    Artifact mount failure → <code>serve</code> reports
+    <code>model_missing</code>; verify volume mounts.
+  </li>
+</ul>
+<h2 id="extensibility">Extensibility</h2>
+<ul>
+  <li>
+    Add CI tests that run <code>src/train.py</code> on a small sample dataset
+    and validate predictions.
+  </li>
+  <li>
+    Connect <code>src/sweep.py</code> to ClearML’s hyperparameter optimizer.
+  </li>
+  <li>
+    Replace local artifact storage with a model registry (S3 + metadata DB).
+  </li>
+</ul>
+<h2 id="files">Files</h2>
+<ul>
+  <li><a href="docker-compose.yml">docker-compose.yml</a></li>
+  <li><a href="src/train.py">src/train.py</a></li>
+  <li><a href="src/validation.py">src/validation.py</a></li>
+  <li><a href="src/serve.py">src/serve.py</a></li>
+  <li><a href="README_FULL.md">README_FULL.md</a></li>
+  <li><a href="README_FULL.html">README_FULL.html</a></li>
+</ul>
+<h2 id="uml-diagrams-mermaid">UML Diagrams (Mermaid)</h2>
+<h3 id="component-diagram">Component Diagram</h3>
+<pre class="mermaid"><code>flowchart TD
+  subgraph Host
+    A[data/train.csv (data)]
+    B[./artifacts (model + metrics)]
+    C[Docker Compose]
+  end
+
+  subgraph Compose
+    T[training-agent\n(src/train.py)]
+    V[validation-agent\n(src/validation.py)]
+    S[serve (Flask)\n(src/serve.py)]
+  end
+
+  A --&gt; T
+  T --&gt; B
+  T --&gt;|upload| ClearML[(ClearML)]
+  B --&gt; V
+  B --&gt; S
+  S --&gt;|HTTP API| Client[User / Client Apps]
+  V --&gt;|validation logs| Monitor[(Console / CI)]
+  ClearML --&gt;|UI/Experiments| User</code></pre>
+<h3 id="sequence-diagram-training-validation-serving">
+  Sequence Diagram (training → validation → serving)
+</h3>
+<pre class="mermaid"><code>sequenceDiagram
+  participant Dev as Developer
+  participant DC as Docker-Compose
+  participant Train as training-agent
+  participant Art as Artifacts
+  participant Val as validation-agent
+  participant Serve as serve
+  participant Client as Client (Browser/API)
+  participant Clear as ClearML
+
+  Dev-&gt;&gt;DC: docker-compose up --build
+  DC-&gt;&gt;Train: start training-agent
+  Train-&gt;&gt;Art: save solar_energy_model.joblib, metrics.json
+  Train-&gt;&gt;Clear: upload metrics &amp; artifacts
+  Train-&gt;&gt;Art: write _SUCCESS
+  DC-&gt;&gt;Val: start validation-agent (waits for _SUCCESS)
+  Val-&gt;&gt;Art: load model &amp; run smoke inference
+  Val--&gt;&gt;DC: validation result (pass/fail)
+  Client-&gt;&gt;Serve: GET / or POST /predict
+  Serve-&gt;&gt;Art: load model (if not loaded)
+  Serve--&gt;&gt;Client: prediction JSON / HTML</code></pre>
+<h3 id="data-flow-simplified">Data Flow (simplified)</h3>
+<pre class="mermaid"><code>flowchart LR
+  TrainData[train.csv] --&gt; Preproc[preprocessing]
+  Preproc --&gt; TrainModel[train model pipeline]
+  TrainModel --&gt; Artifacts[artifacts/*]
+  Artifacts --&gt; Validation[validation smoke-test]
+  Artifacts --&gt; ServeRuntime[Flask serve]
+  ServeRuntime --&gt; Client
+  TrainModel --&gt; ClearML</code></pre>
+<p>
+  You can render these mermaid blocks in Markdown viewers that support Mermaid
+  (VS Code with Mermaid extension, GitHub/other renderers that support mermaid),
+  or export them to images using <code>mmdc</code> (mermaid-cli) or a Docker
+  image.
+</p>
+
+<!-- Mermaid runtime: converts <pre class="mermaid"> blocks into diagrams -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    if (typeof mermaid === "undefined") return;
+    mermaid.initialize({ startOnLoad: false, theme: "default" });
+    document.querySelectorAll("pre.mermaid").forEach(function (pre) {
+      try {
+        var code = pre.textContent || pre.innerText;
+        var div = document.createElement("div");
+        div.className = "mermaid";
+        div.textContent = code;
+        pre.parentNode.replaceChild(div, pre);
+      } catch (e) {
+        console.warn("mermaid render failed", e);
+      }
+    });
+    mermaid.init();
+  });
+</script>

@@ -1,0 +1,447 @@
+<h1 id="solar-energy-prediction-project-documentation">
+  Solar Energy Prediction — Project Documentation
+</h1>
+<p>
+  This document describes the full project: purpose, architecture, setup, how to
+  run training, validation, serving, ClearML integration, artifacts,
+  troubleshooting, and how to convert this documentation to a PDF.
+</p>
+<ol type="1">
+  <li>Project Overview</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    Goal: Train and serve a regression model to predict solar energy generation
+    from meteorological features.
+  </li>
+  <li>
+    Stack: Python, scikit-learn, pandas, joblib, Flask, ClearML, Docker Compose.
+  </li>
+  <li>
+    Components:
+    <ul>
+      <li>
+        <code>training-agent</code>: trains a RandomForest pipeline and writes
+        artifacts to <code>./artifacts</code>.
+      </li>
+      <li>
+        <code>validation-agent</code>: waits for
+        <code>artifacts/_SUCCESS</code>, then validates the saved model.
+      </li>
+      <li>
+        <code>serve</code>: a Flask app that serves predictions via JSON API and
+        a browser form.
+      </li>
+    </ul>
+  </li>
+</ul>
+<ol start="2" type="1">
+  <li>Architecture &amp; Workflow</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    Data: <code>data/train.csv</code> (CSV with a target column
+    <code>energy_generated</code>).
+  </li>
+  <li>
+    Training pipeline (<code>src/train.py</code>):
+    <ul>
+      <li>
+        Reads <code>data/train.csv</code>, splits data, trains a
+        <code>Pipeline</code> with <code>StandardScaler</code> +
+        <code>RandomForestRegressor</code>.
+      </li>
+      <li>
+        Saves model to <code>artifacts/solar_energy_model.joblib</code> using
+        <code>joblib.dump</code>.
+      </li>
+      <li>
+        Generates <code>metrics.json</code>, <code>metrics_plot.png</code>,
+        <code>feature_importances.png</code> and uploads artifacts to ClearML.
+      </li>
+      <li>Writes <code>artifacts/_SUCCESS</code> sentinel on success.</li>
+    </ul>
+  </li>
+  <li>
+    Validation (<code>src/validation.py</code>):
+    <ul>
+      <li>
+        Waits for sentinel (in Docker Compose) then loads model and runs a
+        sample inference to confirm the artifact is valid.
+      </li>
+    </ul>
+  </li>
+  <li>
+    Serving (<code>src/serve.py</code>):
+    <ul>
+      <li>
+        Loads model from
+        <code>/app/artifacts/solar_energy_model.joblib</code> (bind-mounted from
+        host <code>./artifacts</code>).
+      </li>
+      <li>
+        Exposes endpoints:
+        <ul>
+          <li>
+            <code>GET /</code> — browser form for entering features and
+            submitting predictions.
+          </li>
+          <li>
+            <code>GET /health</code> — returns <code>{"status":"ok"}</code> when
+            model loaded.
+          </li>
+          <li>
+            <code>POST /predict</code> — accepts JSON payloads and returns
+            predictions.
+          </li>
+        </ul>
+      </li>
+      <li>
+        The server uses the model pipeline’s feature order (reads
+        <code>feature_names_in_</code> when available) to reorder inputs
+        correctly.
+      </li>
+    </ul>
+  </li>
+</ul>
+<ol start="3" type="1">
+  <li>Repository Layout</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    <code>docker-compose.yml</code> — defines <code>training-agent</code>,
+    <code>validation-agent</code>, <code>serve</code> services.
+  </li>
+  <li><code>Dockerfile</code> — base image and dependency install.</li>
+  <li><code>requirements.txt</code> — python deps.</li>
+  <li><code>data/train.csv</code> — training dataset (user-provided).</li>
+  <li><code>artifacts/</code> — output artifacts and saved model.</li>
+  <li>
+    <code>src/train.py</code>, <code>src/validation.py</code>,
+    <code>src/serve.py</code> — core scripts.
+  </li>
+  <li><code>data/data_registry.py</code> — optional dataset lineage helper.</li>
+</ul>
+<ol start="4" type="1">
+  <li>Data Format</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    <code>data/train.csv</code> must contain columns for features and the target
+    column <code>energy_generated</code>.
+  </li>
+  <li>
+    Example header order (the training file in this repo):
+    temperature,humidity,solar_irradiance,wind_speed,cloud_cover,energy_generated
+  </li>
+  <li>
+    Note: During serving, the code reads the pipeline’s
+    <code>feature_names_in_</code> (if available) and reorders inputs, so your
+    JSON requests must name features (or provide an array matching the expected
+    order).
+  </li>
+</ul>
+<ol start="5" type="1">
+  <li>Setup &amp; Prerequisites</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    System requirements:
+    <ul>
+      <li>Docker and Docker Compose installed.</li>
+      <li>(Optional) Python 3.11 for running scripts locally.</li>
+    </ul>
+  </li>
+  <li>
+    Environment variables required for ClearML (if you use ClearML features):
+    <ul>
+      <li><code>CLEARML_API_ACCESS_KEY</code></li>
+      <li><code>CLEARML_API_SECRET_KEY</code></li>
+      <li>(optional) <code>CLEARML_API_HOST=https://api.clear.ml</code></li>
+    </ul>
+  </li>
+</ul>
+<ol start="6" type="1">
+  <li>Quick Start — Docker Compose (recommended)</li>
+</ol>
+<hr />
+<ul>
+  <li>Place your <code>train.csv</code> into <code>./data</code>.</li>
+  <li>Ensure ClearML env vars are set (if you want ClearML logging):</li>
+</ul>
+<p>PowerShell example:</p>
+<div class="sourceCode" id="cb1">
+  <pre
+    class="sourceCode powershell"
+  ><code class="sourceCode powershell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="va">$env</span><span class="op">:</span><span class="va">CLEARML_API_ACCESS_KEY</span> <span class="op">=</span> <span class="st">&quot;&lt;your_key&gt;&quot;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="va">$env</span><span class="op">:</span><span class="va">CLEARML_API_SECRET_KEY</span> <span class="op">=</span> <span class="st">&quot;&lt;your_secret&gt;&quot;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="va">$env</span><span class="op">:</span><span class="va">CLEARML_API_HOST</span> <span class="op">=</span> <span class="st">&quot;https://api.clear.ml&quot;</span>  <span class="co"># optional</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>docker-compose up <span class="op">--</span>build</span></code></pre>
+</div>
+<ul>
+  <li>
+    Services will run in sequence (training writes <code>_SUCCESS</code>,
+    validation waits for sentinel). The <code>serve</code> service stays running
+    and listens on port 5000.
+  </li>
+</ul>
+<ol start="7" type="1">
+  <li>Running Locally without Docker</li>
+</ol>
+<hr />
+<ul>
+  <li>Create a Python venv and install requirements:</li>
+</ul>
+<div class="sourceCode" id="cb2">
+  <pre
+    class="sourceCode bash"
+  ><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> venv .venv</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate   <span class="co"># Linux/Mac</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="ex">.venv\Scripts\Activate.ps1</span> <span class="co"># Windows PowerShell</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-r</span> requirements.txt</span></code></pre>
+</div>
+<ul>
+  <li>Train locally:</li>
+</ul>
+<div class="sourceCode" id="cb3">
+  <pre
+    class="sourceCode bash"
+  ><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> src/train.py</span></code></pre>
+</div>
+<ul>
+  <li>Validate locally (once model saved):</li>
+</ul>
+<div class="sourceCode" id="cb4">
+  <pre
+    class="sourceCode bash"
+  ><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> src/validation.py</span></code></pre>
+</div>
+<ul>
+  <li>Serve locally:</li>
+</ul>
+<div class="sourceCode" id="cb5">
+  <pre
+    class="sourceCode bash"
+  ><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> src/serve.py</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co"># then open http://127.0.0.1:5000/ in your browser</span></span></code></pre>
+</div>
+<ol start="8" type="1">
+  <li>API Specification</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    <code>POST /predict</code>
+    <ul>
+      <li>Content-Type: <code>application/json</code></li>
+      <li>Request body (preferred):</li>
+    </ul>
+  </li>
+</ul>
+<div class="sourceCode" id="cb6">
+  <pre
+    class="sourceCode json"
+  ><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;instances&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;temperature&quot;</span><span class="fu">:</span> <span class="fl">25.0</span><span class="fu">,</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;humidity&quot;</span><span class="fu">:</span> <span class="fl">45.0</span><span class="fu">,</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;wind_speed&quot;</span><span class="fu">:</span> <span class="fl">5.0</span><span class="fu">,</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;cloud_cover&quot;</span><span class="fu">:</span> <span class="fl">20.0</span><span class="fu">,</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;solar_irradiance&quot;</span><span class="fu">:</span> <span class="fl">650.0</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre>
+</div>
+<ul>
+  <li>Response:</li>
+</ul>
+<div class="sourceCode" id="cb7">
+  <pre
+    class="sourceCode json"
+  ><code class="sourceCode json"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">&quot;predictions&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="er">&lt;float&gt;</span><span class="ot">,</span> <span class="er">...</span><span class="ot">]</span><span class="fu">}</span></span></code></pre>
+</div>
+<ul>
+  <li>
+    <code>GET /health</code> — returns <code>{"status": "ok"}</code> (or
+    <code>model_missing</code>).
+  </li>
+  <li>
+    Browser: <code>GET /</code> loads a form and a demo JSON button that POSTs
+    to <code>/predict</code>.
+  </li>
+</ul>
+<ol start="9" type="1">
+  <li>ClearML Integration</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    <code>src/train.py</code> initializes a ClearML Task and reports metrics and
+    uploads artifacts.
+  </li>
+  <li>
+    Artifacts uploaded: the model file and metric plots. You still get local
+    copies under <code>./artifacts</code>.
+  </li>
+  <li>
+    If ClearML keys are missing, training still runs but remote logging will not
+    occur.
+  </li>
+</ul>
+<ol start="10" type="1">
+  <li>Artifacts &amp; Sentinel</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    After successful training, the following are created under
+    <code>./artifacts</code>:
+    <ul>
+      <li><code>solar_energy_model.joblib</code> — saved pipeline</li>
+      <li><code>metrics.json</code> — metrics and params</li>
+      <li><code>metrics_plot.png</code> — metrics bar chart</li>
+      <li><code>feature_importances.png</code> — feature importance chart</li>
+      <li><code>_SUCCESS</code> — success sentinel file</li>
+    </ul>
+  </li>
+  <li>
+    The <code>validation-agent</code> waits for <code>_SUCCESS</code> before
+    running.
+  </li>
+</ul>
+<ol start="11" type="1">
+  <li>Troubleshooting</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    404 / 405 on <code>/predict</code>:
+    <ul>
+      <li>
+        Ensure you’re using the correct method:
+        <code>GET /predict</code> returns the form;
+        <code>POST /predict</code> is for predictions.
+      </li>
+    </ul>
+  </li>
+  <li>
+    Model not loaded (<code>model_missing</code> in <code>/health</code>):
+    <ul>
+      <li>
+        Confirm <code>./artifacts/solar_energy_model.joblib</code> exists and is
+        readable by the <code>serve</code> process (check volume mounts).
+      </li>
+    </ul>
+  </li>
+  <li>
+    Feature name mismatch error:
+    <ul>
+      <li>
+        The model expects the same feature names/order used during training. Use
+        named JSON <code>instances</code> or ensure arrays match
+        <code>feature_names_in_</code>.
+      </li>
+    </ul>
+  </li>
+  <li>
+    ClearML MissingConfigError:
+    <ul>
+      <li>
+        Set the <code>CLEARML_API_ACCESS_KEY</code> and
+        <code>CLEARML_API_SECRET_KEY</code> environment variables.
+      </li>
+    </ul>
+  </li>
+</ul>
+<ol start="12" type="1">
+  <li>Converting this document to PDF</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    Option A (recommended): Install <code>pandoc</code> and
+    <code>wkhtmltopdf</code> (or a LaTeX distribution) and run:
+  </li>
+</ul>
+<div class="sourceCode" id="cb8">
+  <pre
+    class="sourceCode bash"
+  ><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pandoc</span> README_FULL.md <span class="at">-o</span> README_FULL.pdf</span></code></pre>
+</div>
+<ul>
+  <li>
+    Option B (Windows, PowerShell) using <code>pandoc</code> (install from
+    https://pandoc.org/installing.html):
+  </li>
+</ul>
+<div class="sourceCode" id="cb9">
+  <pre
+    class="sourceCode powershell"
+  ><code class="sourceCode powershell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>pandoc README_FULL<span class="op">.</span><span class="fu">md</span> <span class="op">-</span>o README_FULL<span class="op">.</span><span class="fu">pdf</span></span></code></pre>
+</div>
+<ul>
+  <li>
+    Option C (no external tools): You can open <code>README_FULL.md</code> in a
+    Markdown editor (VS Code, Typora) and export to PDF from the GUI.
+  </li>
+</ul>
+<ol start="13" type="1">
+  <li>Security &amp; Production Notes</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    The Flask dev server is not production-grade. Use a WSGI server (gunicorn,
+    waitress, uWSGI) for production.
+  </li>
+  <li>Sanitize and validate input payloads before exposing publicly.</li>
+  <li>Consider adding authentication to the serving endpoint.</li>
+</ul>
+<ol start="14" type="1">
+  <li>Next Improvements (suggestions)</li>
+</ol>
+<hr />
+<ul>
+  <li>
+    Add ClearML optimizer sweep integration (connect
+    <code>src/sweep.py</code> to ClearML Hyperparameter sweeper).
+  </li>
+  <li>Add unit tests for model IO and API inputs.</li>
+  <li>
+    Add a production-ready <code>Dockerfile</code> for serving (use gunicorn).
+  </li>
+  <li>
+    Add CI to run training quickly on example data and upload artifacts to a
+    test ClearML project.
+  </li>
+</ul>
+<ol start="15" type="1">
+  <li>Files I created for you</li>
+</ol>
+<hr />
+<ul>
+  <li><a href="README_FULL.md">README_FULL.md</a></li>
+  <li>
+    A PowerShell script <code>scripts/generate_pdf.ps1</code> with pandoc
+    instructions (created below).
+  </li>
+</ul>
+<ol start="16" type="1">
+  <li>Contact / Help</li>
+</ol>
+<hr />
+<p>If you want, I can:</p>
+<ul>
+  <li>
+    Generate the PDF here (if you give permission to install pandoc in this
+    environment), or
+  </li>
+  <li>Add example curl commands, automated tests, or CI configs.</li>
+</ul>
+<p>– End of documentation</p>

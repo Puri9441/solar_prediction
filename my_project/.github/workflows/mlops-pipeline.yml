@@ -1,0 +1,11 @@
+name: MLOps Pipeline Trigger
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2 # Capture Git Version
+      - name: Build Boilerplate Container
+        run: docker build -t emnist-boilerplate .
+      - name: Run Pipeline
+        run: docker run emnist-boilerplate

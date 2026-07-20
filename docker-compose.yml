@@ -1,0 +1,44 @@
+services:
+  training-agent:
+    build: .
+    environment:
+      - CLEARML_API_ACCESS_KEY
+      - CLEARML_API_SECRET_KEY
+      - CLEARML_API_HOST
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    command: ["python", "src/train.py"]
+
+  validation-agent:
+    build: .
+    environment:
+      - CLEARML_API_ACCESS_KEY
+      - CLEARML_API_SECRET_KEY
+      - CLEARML_API_HOST
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    depends_on:
+      - training-agent
+    command:
+      [
+        "sh",
+        "-c",
+        "while [ ! -f /app/artifacts/_SUCCESS ]; do sleep 1; done; python src/validation.py",
+      ]
+    restart: "no"
+
+  serve:
+    build: .
+    environment:
+      - CLEARML_API_ACCESS_KEY
+      - CLEARML_API_SECRET_KEY
+      - CLEARML_API_HOST
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    ports:
+      - "5000:5000"
+    command: ["python", "src/serve.py"]
+    restart: "always"

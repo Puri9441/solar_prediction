@@ -1,0 +1,128 @@
+*   Trying 127.0.0.1:5000...
+* Established connection to 127.0.0.1 (127.0.0.1 port 5000) from 127.0.0.1 port 62924 
+  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+                                 Dload  Upload  Total   Spent   Left   Speed
+
+  0      0   0      0   0      0      0      0                              0* using HTTP/1.x
+> GET /predict HTTP/1.1
+
+> Host: 127.0.0.1:5000
+
+> User-Agent: curl/8.21.0
+
+> Accept: */*
+
+> 
+
+* Request completely sent off
+< HTTP/1.1 200 OK
+
+< Server: Werkzeug/3.1.8 Python/3.11.15
+
+< Date: Mon, 20 Jul 2026 12:57:23 GMT
+
+< Content-Type: text/html; charset=utf-8
+
+< Content-Length: 3022
+
+< Connection: close
+
+< 
+
+{ [3022 bytes data]
+
+100   3022 100   3022   0      0 191.1k      0                              0
+100   3022 100   3022   0      0 189.6k      0                              0
+100   3022 100   3022   0      0 186.4k      0                              0
+* shutting down connection #0
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Solar Energy Prediction</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; }
+      label { display: block; margin: 0.75rem 0 0.25rem; }
+      input[type=text] { width: 100%; max-width: 360px; padding: 0.4rem; }
+      textarea { width: 100%; max-width: 640px; height: 120px; padding: 0.4rem; }
+      button { margin-top: 1rem; padding: 0.5rem 1rem; }
+      .result { margin-top: 1.25rem; padding: 1rem; border: 1px solid #ccc; background: #f9f9f9; }
+    </style>
+  </head>
+  <body>
+    <h1>Solar Energy Prediction</h1>
+    <p>Enter values and submit the form, or send JSON to <code>/predict</code>.</p>
+    <form id="predict-form" method="post" action="/predict">
+      
+        <label for="temperature">Temperature</label>
+        <input type="text" id="temperature" name="temperature" value="" required />
+      
+        <label for="humidity">Humidity</label>
+        <input type="text" id="humidity" name="humidity" value="" required />
+      
+        <label for="wind_speed">Wind Speed</label>
+        <input type="text" id="wind_speed" name="wind_speed" value="" required />
+      
+        <label for="cloud_cover">Cloud Cover</label>
+        <input type="text" id="cloud_cover" name="cloud_cover" value="" required />
+      
+        <label for="solar_irradiance">Solar Irradiance</label>
+        <input type="text" id="solar_irradiance" name="solar_irradiance" value="" required />
+      
+      <button type="submit">Predict</button>
+    </form>
+
+    <h2>Browser JSON Demo</h2>
+    <p>Click the button to send the same request as JSON.</p>
+    <button id="json-predict">Send JSON request</button>
+    <div id="json-result" class="result" style="display:none;"></div>
+
+    <h2>JSON API Example</h2>
+    <textarea readonly>{
+  "instances": [
+    {
+      "temperature": 25.0,
+      "humidity": 45.0,
+      "wind_speed": 5.0,
+      "cloud_cover": 20.0,
+      "solar_irradiance": 650.0
+    }
+  ]
+}</textarea>
+
+    
+
+    <script>
+      document.getElementById('json-predict').addEventListener('click', async function () {
+        const payload = {
+          instances: [
+            {
+              temperature: 25.0,
+              humidity: 45.0,
+              wind_speed: 5.0,
+              cloud_cover: 20.0,
+              solar_irradiance: 650.0,
+            },
+          ],
+        };
+
+        const resultDiv = document.getElementById('json-result');
+        resultDiv.style.display = 'block';
+        resultDiv.textContent = 'Sending request...';
+
+        try {
+          const response = await fetch('/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json();
+          resultDiv.textContent = JSON.stringify(data, null, 2);
+        } catch (err) {
+          resultDiv.textContent = 'Request failed: ' + err;
+        }
+      });
+    </script>
+  </body>
+</html>
