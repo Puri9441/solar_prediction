@@ -3,7 +3,6 @@ import joblib
 import os
 import pandas as pd
 
-MODEL_PATH = os.path.join("/app/artifacts", "solar_energy_model.joblib")
 DEFAULT_FEATURE_NAMES = [
     "temperature",
     "humidity",
@@ -12,8 +11,31 @@ DEFAULT_FEATURE_NAMES = [
     "cloud_cover",
 ]
 
+MODEL_PATH = os.environ.get(
+    "MODEL_PATH",
+    os.path.join("/app/artifacts", "solar_energy_model.joblib"),
+)
+
 app = Flask(__name__)
 model = None
+
+
+def resolve_model_path():
+    candidates = []
+    env_path = os.environ.get("MODEL_PATH")
+    if env_path:
+        candidates.append(env_path)
+    candidates.extend([
+        os.path.join("/app/artifacts", "solar_energy_model.joblib"),
+        os.path.abspath(os.path.join(os.getcwd(), "artifacts", "solar_energy_model.joblib")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "artifacts", "solar_energy_model.joblib")),
+    ])
+
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+
+    return candidates[0] if candidates else os.path.join("artifacts", "solar_energy_model.joblib")
 
 
 def get_model_feature_names():
@@ -34,11 +56,19 @@ def get_model_feature_names():
 
 
 def load_model():
-    global model
+    global model, MODEL_PATH
+    resolved_path = resolve_model_path()
+    MODEL_PATH = resolved_path
     if os.path.exists(MODEL_PATH):
-        model = joblib.load(MODEL_PATH)
+        try:
+            model = joblib.load(MODEL_PATH)
+        except Exception:
+            model = None
     else:
         model = None
+
+
+load_model()
 
 
 HTML_PREDICT_FORM = """
@@ -135,6 +165,7 @@ def home():
 
 @app.route("/health", methods=["GET"])
 def health():
+    load_model()
     return jsonify({"status": "ok" if model is not None else "model_missing"})
 
 
@@ -145,6 +176,7 @@ def predict():
     if request.method == "GET":
         return render_template_string(HTML_PREDICT_FORM, features=feature_names)
 
+    load_model()
     if model is None:
         return jsonify({"error": "model not loaded"}), 500
 

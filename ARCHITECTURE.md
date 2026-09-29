@@ -105,8 +105,7 @@ sequenceDiagram
 - [src/train.py](src/train.py)
 - [src/validation.py](src/validation.py)
 - [src/serve.py](src/serve.py)
-- [README_FULL.md](README_FULL.md)
-- [README_FULL.html](README_FULL.html)
+- [README.md](README.md)
 
 ## UML Diagrams (Mermaid)
 

@@ -1,8 +1,8 @@
-# PowerShell script to convert README_FULL.md to PDF using pandoc
+# PowerShell script to convert README.md to PDF using pandoc
 # Requires: pandoc installed and accessible in PATH
 
-$input = "README_FULL.md"
-$output = "README_FULL.pdf"
+$input = "README.md"
+$output = "README.pdf"
 
 if (!(Get-Command pandoc -ErrorAction SilentlyContinue)) {
     Write-Error "pandoc not found. Install pandoc: https://pandoc.org/installing.html"
