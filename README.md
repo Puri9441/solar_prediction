@@ -69,6 +69,26 @@ python src\serve.py
 Open `http://127.0.0.1:5000/`. Check `http://127.0.0.1:5000/health`; a loaded
 model returns `{"status":"ok"}`.
 
+### Streamlit frontend
+
+Install the dependencies, train the model, and start the Streamlit interface:
+
+```powershell
+python -m pip install -r requirements.txt
+python src\train.py
+streamlit run app.py
+```
+
+Open `http://127.0.0.1:8501/`. The interface supports single-record predictions,
+CSV batch predictions, model metrics, and training visualizations.
+The **Customer proposal** tab is a demo: it estimates a system size from the
+customer's bill and compares systems up to 50 kW, while its multi-year generation
+history uses NASA POWER monthly solar irradiance data for the entered
+coordinates. The estimated generation applies an 80% performance ratio to the
+solar resource data; it is not measured panel output. An internet connection
+is required. Treat the result as preliminary and complete a roof/shading survey
+before presenting a final system recommendation.
+
 ## Run with Docker Compose
 
 Set the ClearML environment variables as above in PowerShell, then run:

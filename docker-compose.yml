@@ -42,3 +42,22 @@ services:
       - "5000:5000"
     command: ["python", "src/serve.py"]
     restart: "always"
+
+  frontend:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    ports:
+      - "8501:8501"
+    command:
+      [
+        "streamlit",
+        "run",
+        "app.py",
+        "--server.address=0.0.0.0",
+        "--server.port=8501",
+      ]
+    depends_on:
+      - training-agent
+    restart: "always"
